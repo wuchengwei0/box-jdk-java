@@ -5,7 +5,10 @@ import org.springframework.util.ResourceUtils;
 
 import java.io.*;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @Author: 吴成伟
@@ -27,57 +30,49 @@ public class Box {
         BoxDeveloperEditionAPIConnection connection = BoxDeveloperEditionAPIConnection.getAppEnterpriseConnection(getBoxConfig());
         return connection;
     }
-    @Test
-    public void ds() throws  Exception{
-        BoxAPIConnection api = getApi();
-        BoxFolder boxFolder = new BoxFolder(api,"169494271897");
-
-
-        Iterable<BoxItem.Info> children = BoxFolder.getRootFolder(api).getChildren();
-        for (BoxItem.Info child : children) {
-            System.out.println(child.getName());
-            String id = child.getID();
-            System.out.println("id="+id);
-        }
+    public void dfs(String rootFolderId,String folderPath){
+        folderPath.split("/");
     }
     @Test
-    public void test() throws IOException {
-
-
-        BoxAPIConnection api = getApi();
-
-        BoxFolder rootFolder = BoxFolder.getRootFolder(api);
-
-
-        BoxUser.Info userInfo = BoxUser.getCurrentUser(api).getInfo();
-        System.out.format("Welcome, %s <%s>!\n\n", userInfo.getName(), userInfo.getLogin());
-
-        listFolder(rootFolder,5);
-        System.out.println("listFolder???");
-
-        for (BoxItem.Info info : rootFolder) {
-            System.out.println("?"+info.getName());
-        }
-        BoxFolder boxFolder = new BoxFolder(api, "");
-        for (BoxItem.Info info : boxFolder) {
-            System.out.println("!!!"+info.getName());
-        }
-
+    public void xv() throws IOException {
+        BoxFolder folder = new BoxFolder(getApi(),"169494271897");
+        System.out.println(folder.getInfo().getType());
+//        String[] folderPaths = "a1/a2/a3".split("/");
+//        List<String> paths = Arrays.asList(folderPaths);
+//        BoxFolder id = createFolder(folder, paths, 0);
+//        System.out.println(id);
     }
-    private void listFolder(BoxFolder folder, int depth) {
-        for (BoxItem.Info itemInfo : folder) {
-            StringBuilder indent = new StringBuilder();
-            for (int i = 0; i < depth; i++) {
-                indent.append("    ");
-            }
 
-            System.out.println("-----"+indent + itemInfo.getName());
-            if (itemInfo instanceof BoxFolder.Info) {
-                BoxFolder childFolder = (BoxFolder) itemInfo.getResource();
-                if (depth < MAX_DEPTH) {
-                    listFolder(childFolder, depth + 1);
+    public BoxFolder createFolder(BoxFolder folder, String[] folderPaths, int deep) throws IOException{
+        return createFolder(folder,folderPaths,deep);
+    }
+    public BoxFolder createFolder(BoxFolder folder, List<String> folderPaths, int deep) throws IOException {
+        if( deep == folderPaths.size() ){
+            return folder;
+        }
+        System.out.println("dfs1:name"+folder.getInfo().getName());
+        Iterator<BoxItem.Info> it = folder.getChildren().iterator();
+        while (it.hasNext()){
+            BoxItem.Info info = it.next();
+            System.out.println(info.getType());
+            boolean same = info.getName().toLowerCase().equals(folderPaths.get(deep)) && "folder".equals(info.getType());
+            if( same ){
+                if( deep+1 == folderPaths.size() ){
+                    return new BoxFolder(getApi(),info.getID());
+                }else{
+                    createFolder(new BoxFolder(folder.getAPI(),info.getID()),folderPaths,deep+1);
                 }
             }
+            if( same && deep+1 == folderPaths.size() ){
+                return new BoxFolder(getApi(),info.getID());
+            }
+        }
+        if( deep < folderPaths.size() ){
+            BoxFolder.Info folderInfo = folder.createFolder(folderPaths.get(deep));
+            BoxFolder boxFolder = new BoxFolder(folder.getAPI(), folderInfo.getID());
+            return createFolder(boxFolder,folderPaths,deep+1);
+        }else{
+            return folder;
         }
     }
 }
