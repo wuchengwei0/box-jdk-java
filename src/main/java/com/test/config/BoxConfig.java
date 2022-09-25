@@ -2,6 +2,7 @@ package com.test.config;
 
 import com.box.sdk.BoxAPIConnection;
 import com.box.sdk.BoxDeveloperEditionAPIConnection;
+import com.test.service.impl.BoxServiceImpl;
 import org.apache.commons.io.FileUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -28,5 +29,8 @@ public class BoxConfig {
         Reader reader = new InputStreamReader(inputStream);
         com.box.sdk.BoxConfig boxConfig = com.box.sdk.BoxConfig.readFrom(reader);
         return boxConfig;
+    }
+
+    public static void main(String[] args) {
     }
 }

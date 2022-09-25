@@ -1,16 +1,22 @@
 package com.test.service.impl;
 
 import com.box.sdk.*;
+import com.box.sdk.sharedlink.BoxSharedLinkRequest;
 import com.test.service.BoxService;
 import org.apache.commons.lang.StringUtils;
+import org.junit.Before;
+import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Service;
 import org.springframework.util.ResourceUtils;
 
+import javax.swing.*;
 import java.io.*;
+import java.text.SimpleDateFormat;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 
@@ -21,6 +27,18 @@ import java.util.List;
  */
 @Service
 public class BoxServiceImpl implements BoxService {
+    private static final boolean IGNORE_CASE = true;
+    private static final String ILLEGAL_CHARACTER = "\\/:*?\"<>|";
+    private static final String TYPE_FILE = "file";
+    private static final String TYPE_FOLDER = "folder";
+
+    @Test
+    public void teset() throws Exception{
+        System.out.println("start");
+        boolean move = move("1023567014530", "169494677651");
+        System.out.println(move);
+    }
+
     @Autowired
     @Qualifier("apis")
     private BoxAPIConnection api;
@@ -34,23 +52,35 @@ public class BoxServiceImpl implements BoxService {
     public boolean uploadFile(String boxFolderId,String boxFolder,File localFile,String user_id) throws IOException {
         boolean result = false;
         try{
-            BoxFolder rootFolder = new BoxFolder(api, boxFolderId);
-            BoxFolder folder = createFolder(rootFolder, boxFolder.split("/"), 0);
-
+//            mkdirs(boxFolderId,)
+        }catch (Exception e){
+            result = false;
+        }finally {
+            return result;
+        }
+    }
+    public BoxFile.Info uploadFile(String boxFolderId,String file_path,String user_id) throws IOException{
+        return uploadFile(boxFolderId,new File(file_path),user_id);
+    }
+    public BoxFile.Info uploadFile(String boxFolderId,File localFile,String user_id) throws IOException{
+        return uploadFile(new BoxFolder(api,boxFolderId),localFile,user_id);
+    }
+    public BoxFile.Info uploadFile(BoxFolder folder,File localFile,String user_id) throws IOException{
+        boolean result = false;
+        BoxFile.Info info = null;
+        try{
             folder.canUpload(localFile.getName(),localFile.length());
-
             FileUploadParams params = new FileUploadParams();
             FileInputStream in = new FileInputStream(localFile);
             params.setContent(in);
             params.setName(localFile.getName());
             if(StringUtils.isNotEmpty(user_id))
                 params.setDescription(user_id);
-            folder.uploadFile(params);
-            result = true;
+            info = folder.uploadFile(params);
         }catch (Exception e){
-            result = false;
+            e.printStackTrace();
         }finally {
-            return result;
+            return info;
         }
     }
 
@@ -60,47 +90,233 @@ public class BoxServiceImpl implements BoxService {
         file.download(localOutputStream);
         localOutputStream.close();
     }
+    @Override
+    public boolean move(String file_from_id,String folder_to_id){
+        return move(file_from_id,folder_to_id,null);
+    }
 
-    public String getFolderID(BoxFolder folder,String[] folderPaths) throws IOException {
-        BoxFolder target_folder = createFolder(folder, Arrays.asList(folderPaths), 0);
-        return target_folder.getID();
-    }
-    public String getFolderID(BoxFolder folder,List<String> folderPaths) throws IOException {
-        BoxFolder target_folder = createFolder(folder, folderPaths, 0);
-        return target_folder.getID();
-    }
-    public BoxFolder createFolder(BoxFolder folder, String[] folderPaths, int deep) throws IOException{
-        return createFolder(folder,Arrays.asList(folderPaths),deep);
-    }
-    public BoxFolder createFolder(BoxFolder folder, List<String> folderPaths, int deep) throws IOException {
-        if( deep == folderPaths.size() ){
-            return folder;
+    @Override
+    public boolean move(String file_from_id,String folder_to_id,String name_rule_format){
+        boolean success = false;
+        try{
+            BoxFile boxFile = new BoxFile(api,file_from_id);
+            BoxFolder boxFolder = new BoxFolder(api, folder_to_id);
+            boolean info = move(boxFile, boxFolder,name_rule_format);
+            success = true;
+        }catch (Exception e){
+            success = false;
+            e.printStackTrace();
+        }finally {
+            return success;
         }
-        System.out.println("dfs1:name"+folder.getInfo().getName());
-        Iterator<BoxItem.Info> it = folder.getChildren().iterator();
-        while (it.hasNext()){
-            BoxItem.Info info = it.next();
-            if( !"folder".equals(info.getType()) )
-                continue;
-            System.out.println(info.getType());
-            boolean same = info.getName().toLowerCase().equals(folderPaths.get(deep));
-            if( same ){
-                if( deep+1 == folderPaths.size() ){
-                    return new BoxFolder(api,info.getID());
-                }else{
-                    return createFolder(new BoxFolder(folder.getAPI(),info.getID()),folderPaths,deep+1);
+    }
+
+    @Override
+    public boolean move(BoxFile file_from,BoxFolder folder_to){
+        return move(file_from,folder_to,null);
+    }
+
+    @Override
+    public boolean move(BoxFile file_from,BoxFolder folder_to,String name_rule_format){
+        boolean success = false;
+        try{
+            if( StringUtils.isNotEmpty(name_rule_format) ){
+                String name = file_from.getInfo().getName();
+                String name_prefix = new SimpleDateFormat(name_rule_format).format(new Date());
+                BoxItem.Info info = file_from.move(folder_to, name_prefix + name);
+            }else{
+                BoxItem.Info info = file_from.move(folder_to);
+            }
+            success = true;
+        }catch (Exception e){
+            success = false;
+            e.printStackTrace();
+        }finally {
+            return success;
+        }
+    }
+
+    /**
+     * create shared
+     * @param fId
+     * @return
+     */
+    @Override
+    public BoxSharedLink shared(String fId){
+        return shared(fId,true,true,false);
+    }
+    @Override
+    public BoxSharedLink shared(String fId,boolean canDownload,boolean canPreview,boolean canEdit){
+        BoxFile boxFile = new BoxFile(api,fId);
+        BoxSharedLinkRequest boxSharedLinkRequest = new BoxSharedLinkRequest();
+        boxSharedLinkRequest.permissions(canDownload,canPreview,canEdit);
+        BoxSharedLink sharedLink = boxFile.createSharedLink(boxSharedLinkRequest);
+        return sharedLink;
+    }
+
+    /**
+     * ensure the file/folder exists
+     * @param folderId parent Folder id
+     * @param relativePath  file/folder
+     * @return exists-->true,not exists--->false
+     */
+    @Override
+    public boolean exists(String folderId,String relativePath){
+        return exists(folderId,relativePath,TYPE_FILE);
+    }
+    @Override
+    public boolean exists(String folderId,String relativePath,String ftype){
+        String fid = getFID(folderId, relativePath, ftype);
+        return StringUtils.isNotEmpty(fid);
+    }
+
+
+    /**
+     *
+     * @param folderId
+     * @param relativePath
+     * @return
+     */
+    @Override
+    public String getFID(String folderId,String relativePath){
+        return getFID(folderId,relativePath,TYPE_FILE);
+    }
+
+    /**
+     *
+     * @param folderId
+     * @param relativePath
+     * @param ftype "file" or "folder" and default "file" type
+     * @return
+     */
+    @Override
+    public String getFID(String folderId,String relativePath,String ftype){
+        String[] paths = getPaths(relativePath);
+        if (paths==null||paths.length==0){
+            return null;
+        }else if( paths.length == 1 ){
+            return getID(folderId,paths[0],ftype);
+        }else{
+            for (int i = 0; i < paths.length-1; i++) {
+                folderId = getID(folderId,paths[i],TYPE_FOLDER);
+                if( folderId == null ){
+                    return null;
                 }
             }
-//            if( same && deep+1 == folderPaths.size() ){
-//                return new BoxFolder(api,info.getID());
-//            }
+            return getID(folderId,paths[paths.length-1],ftype);
         }
-        if( deep < folderPaths.size() ){
-            BoxFolder.Info folderInfo = folder.createFolder(folderPaths.get(deep));
-            BoxFolder boxFolder = new BoxFolder(folder.getAPI(), folderInfo.getID());
-            return createFolder(boxFolder,folderPaths,deep+1);
+    }
+
+    private String getID(String parentFolderId,String fname,String ftype){
+        BoxFolder boxFolder = new BoxFolder(api,parentFolderId);
+        Iterator<BoxItem.Info> it = boxFolder.getChildren().iterator();
+        while (it.hasNext()){
+            BoxItem.Info info = it.next();
+            String name = info.getName();
+            String type = info.getType();
+            if( name_equals(name,fname) && type.equals(ftype) ){
+                return info.getID();
+            }
+        }
+        return null;
+    }
+
+    @Override
+    public String mkdirs(String parentFolderId,String paths) throws Exception{
+        String[] path_list = getPaths(paths);
+        String folderId = parentFolderId;
+        for (String path : path_list) {
+            folderId = mkdir(folderId,path);
+        }
+        return folderId;
+    }
+    /**
+     *
+     * @param parentFolderId
+     * @param folderName
+     * @return create new folder's id or exists folder's id
+     * @throws Exception
+     */
+    @Override
+    public String mkdir(String parentFolderId,String folderName) throws Exception{
+        if( !legal_name(folderName) ){
+            throw new Exception("file or folder name is Illegal");
+        }
+        BoxFolder parentFolder = new BoxFolder(api, parentFolderId);
+        Iterator<BoxItem.Info> it = parentFolder.getChildren().iterator();
+        boolean created = false;
+        while (it.hasNext()){
+            BoxItem.Info info = it.next();
+            String type = info.getType();
+            String box_folder_name = info.getName();
+            if( name_equals(box_folder_name,folderName) && "folder".equals(type) ){
+                return info.getID();
+            }
+        }
+        if (!created){
+            BoxFolder.Info folder = parentFolder.createFolder(folderName);
+            return folder.getID();
         }else{
-            return folder;
+            return null;
         }
+    }
+
+    /**
+     * split path with '/'
+     * @param paths
+     * @return
+     */
+    private String[] getPaths(String paths){
+        if( StringUtils.isEmpty(paths) ){
+            return null;
+        }
+        paths = paths.startsWith("/")? paths.substring(1) : paths;
+        String[] path_list = paths.split("/");
+        return path_list;
+    }
+    public boolean name_equals(String box_fname,String fname){
+        if( IGNORE_CASE ){
+            return box_fname.toLowerCase().equals(fname.toLowerCase());
+        }else{
+            return box_fname.equals(fname);
+        }
+    }
+    public boolean legal_name(String name){
+        char[] chars = ILLEGAL_CHARACTER.toCharArray();
+        for (char illegal_char : chars) {
+            boolean illegal = name.contains(illegal_char + "");
+            if(illegal){
+                return false;
+            }
+        }
+        return true;
+    }
+    public String getFType(String ftype){
+        if( StringUtils.isEmpty(ftype) ){
+            return TYPE_FILE;
+        }else{
+            ftype = ftype.toLowerCase();
+            if( "file".equals(ftype) || "folder".equals(ftype) )
+                return ftype;
+            else
+                return TYPE_FILE;
+        }
+    }
+//------------------------------------------------
+    @Before
+    public void init() throws IOException {
+        System.out.println("api = init");
+        api = getApi();
+    }
+    public com.box.sdk.BoxConfig getBoxConfig() throws IOException {
+        File file = ResourceUtils.getFile("classpath:box-config.json");
+        InputStream inputStream = new FileInputStream(file);
+        Reader reader = new InputStreamReader(inputStream);
+        com.box.sdk.BoxConfig boxConfig = com.box.sdk.BoxConfig.readFrom(reader);
+        return boxConfig;
+    }
+    public BoxAPIConnection getApi() throws IOException {
+        BoxDeveloperEditionAPIConnection connection = BoxDeveloperEditionAPIConnection.getAppEnterpriseConnection(getBoxConfig());
+        return connection;
     }
 }
